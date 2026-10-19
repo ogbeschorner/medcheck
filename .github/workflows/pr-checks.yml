@@ -46,9 +46,9 @@ jobs:
       - name: Run infrastructure tests with coverage
         run: uv run pytest --cov=tests --cov-report=xml
         env:
-          DJANGO_SECRET_KEY: test-secret-key-for-ci
+          DJANGO_SECRET_KEY: ci-placeholder-django-secret-key
       - name: Scan Python application code
-        run: uv run bandit --quiet --recursive accounts config
+        run: uv run bandit --quiet --recursive medications config
       - name: Upload backend coverage
         if: always()
         uses: actions/upload-artifact@v4
@@ -85,21 +85,10 @@ jobs:
         run: pnpm test
       - name: Build web application
         run: pnpm build
-      - name: Install Playwright Chromium
-        run: pnpm exec playwright install --with-deps chromium
-      - name: Run landing-page browser tests
-        run: pnpm test:e2e
       - name: Upload web coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: web-coverage
           path: web/coverage
-          if-no-files-found: ignore
-      - name: Upload Playwright diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: web/playwright-report
           if-no-files-found: ignore

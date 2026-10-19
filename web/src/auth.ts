@@ -30,7 +30,7 @@ export async function currentAccount(): Promise<Account | null> {
 async function csrfToken(): Promise<string> {
   let response: Response;
   try {
-    response = await fetch("/api/auth/csrf/", {
+    response = await fetch("/api/csrf/", {
       credentials: "same-origin",
     });
   } catch {

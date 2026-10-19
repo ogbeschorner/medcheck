@@ -2,7 +2,7 @@
 
 import os
 
-os.environ.setdefault("DJANGO_SECRET_KEY", "test-only-secret-key")
+os.environ.setdefault("DJANGO_SECRET_KEY", "test-only-placeholder-secret-key")
 
 from .settings import *  # noqa: F403
 
