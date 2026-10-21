@@ -1,26 +1,26 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Navigate, NavLink, Route, Routes } from "react-router-dom";
+import {
+  Navigate,
+  NavLink,
+  Route,
+  Routes,
+  useNavigate,
+} from "react-router-dom";
 import { Account, AccountError, accountAction, currentAccount } from "./auth";
+import { currentMedicationSchedule, MedicationSchedule } from "./medications";
 
 type OpenPanel = "menu" | "account" | null;
-
-export type SavedMedicine = {
-  id: string;
-  name: string;
-};
-
-type AppProps = {
-  savedMedicines?: SavedMedicine[];
-};
 
 function Navigation({
   account,
   onAccountChange,
   ready,
+  signInRequest,
 }: {
   account: Account | null;
   onAccountChange: (account: Account | null) => void;
   ready: boolean;
+  signInRequest: number;
 }) {
   const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
   const [accountForm, setAccountForm] = useState<"login" | "register" | null>(
@@ -29,6 +29,13 @@ function Navigation({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (signInRequest) {
+      setOpenPanel("account");
+      setAccountForm("login");
+    }
+  }, [signInRequest]);
 
   async function submitAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -262,14 +269,14 @@ function Navigation({
 
 function HomePage() {
   const [query, setQuery] = useState("");
-  const [submittedQuery, setSubmittedQuery] = useState("");
+  const navigate = useNavigate();
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedQuery = query.trim();
 
     if (trimmedQuery) {
-      setSubmittedQuery(trimmedQuery);
+      navigate(`/search?q=${encodeURIComponent(trimmedQuery)}`);
     }
   }
 
@@ -282,14 +289,14 @@ function HomePage() {
 
       <form className="search-form" role="search" onSubmit={handleSubmit}>
         <label className="sr-only" htmlFor="health-search">
-          Search medications, symptoms, or health topics
+          Search medications by brand or generic name
         </label>
         <input
           id="health-search"
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search medications, symptoms, or health topics"
+          placeholder="Search a medication name"
           autoComplete="off"
         />
         <button type="submit" aria-label="Search">
@@ -299,14 +306,52 @@ function HomePage() {
         </button>
       </form>
 
-      <p className="search-status" role="status" aria-live="polite">
-        {submittedQuery ? `Searching for “${submittedQuery}”` : ""}
+      <p className="search-status">
+        Drug-label information from openFDA. Not personal medical advice.
       </p>
     </section>
   );
 }
 
 function SavedMedicinesPage({ medicines }: { medicines: SavedMedicine[] }) {
+  const [selectedDay, setSelectedDay] = useState("Monday");
+  const [schedule, setSchedule] = useState<MedicationSchedule | null>(null);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const today = new Date();
+  const monday = new Date(today);
+  const dayOfWeek = today.getDay();
+  monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + index);
+    return {
+      name: date.toLocaleDateString("en-US", { weekday: "long" }),
+      number: date.getDate(),
+    };
+  });
+  useEffect(() => {
+    let active = true;
+    currentMedicationSchedule().then(
+      (nextSchedule) => {
+        if (active) setSchedule(nextSchedule);
+      },
+      (error) => {
+        if (active) {
+          setScheduleError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load your schedule.",
+          );
+        }
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const selectedMedicines = schedule?.[selectedDay] ?? [];
+
   return (
     <section className="saved-medicines" aria-labelledby="saved-page-title">
       <div className="saved-medicines-heading">
@@ -333,6 +378,85 @@ function SavedMedicinesPage({ medicines }: { medicines: SavedMedicine[] }) {
           ))}
         </ul>
       )}
+
+      <section className="weekly-organizer" aria-labelledby="organizer-title">
+        <div className="organizer-heading">
+          <div>
+            <p className="section-label">Plan ahead</p>
+            <h2 id="organizer-title">Weekly organizer</h2>
+          </div>
+          <span className="organizer-caption">Tap a day to open</span>
+        </div>
+
+        {scheduleError && (
+          <p className="account-error" role="alert">
+            {scheduleError}
+          </p>
+        )}
+        <div className="organizer" role="group" aria-label="Medication week">
+          {days.map((day) => {
+            const isSelected = selectedDay === day.name;
+            const doses = schedule?.[day.name] ?? [];
+            return (
+              <button
+                className="organizer-day"
+                type="button"
+                key={day.name}
+                aria-label={`${day.name} ${day.number}`}
+                aria-pressed={isSelected}
+                onClick={() => setSelectedDay(day.name)}
+              >
+                <span className="organizer-day-name">
+                  {day.name.slice(0, 3)}
+                </span>
+                <span className="organizer-day-number">{day.number}</span>
+                <span className="pill-compartment" aria-hidden="true">
+                  {doses.length > 0 ? (
+                    doses
+                      .slice(0, 3)
+                      .map((dose) => <span className="pill" key={dose.id} />)
+                  ) : (
+                    <span className="pill-empty" />
+                  )}
+                </span>
+                <span className="sr-only">
+                  {doses.length} medication{" "}
+                  {doses.length === 1 ? "dose" : "doses"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="organizer-details" aria-live="polite">
+          <div className="organizer-details-heading">
+            <p className="section-label">Open compartment</p>
+            <h3>{selectedDay}'s medicines</h3>
+          </div>
+          {selectedMedicines.length > 0 ? (
+            <ul className="dose-list">
+              {selectedMedicines.map((medicine) => (
+                <li className="dose-card" key={medicine.id}>
+                  <span className="dose-icon" aria-hidden="true" />
+                  <span className="dose-copy">
+                    <strong>{medicine.name}</strong>
+                    <span>{medicine.time}</span>
+                  </span>
+                  <span className={`food-badge ${medicine.food}`}>
+                    {medicine.food === "with food"
+                      ? "Take with food"
+                      : "Take without food"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="organizer-empty">
+              No medicines scheduled for this day.
+            </p>
+          )}
+        </div>
+      </section>
     </section>
   );
 }
@@ -340,6 +464,7 @@ function SavedMedicinesPage({ medicines }: { medicines: SavedMedicine[] }) {
 export function App({ savedMedicines = [] }: AppProps) {
   const [account, setAccount] = useState<Account | null>(null);
   const [accountReady, setAccountReady] = useState(false);
+  const [signInRequest, setSignInRequest] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -365,14 +490,25 @@ export function App({ savedMedicines = [] }: AppProps) {
         account={account}
         onAccountChange={setAccount}
         ready={accountReady}
+        signInRequest={signInRequest}
       />
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/search" element={<SearchPage />} />
+        <Route
+          path="/medications/:provider/:externalId"
+          element={
+            <DetailPage
+              account={account}
+              onSignIn={() => setSignInRequest((n) => n + 1)}
+            />
+          }
+        />
         <Route
           path="/my-medication"
           element={
             !accountReady ? null : account ? (
-              <SavedMedicinesPage medicines={savedMedicines} />
+              <SavedPage />
             ) : (
               <Navigate to="/" replace />
             )
